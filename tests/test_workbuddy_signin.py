@@ -14,18 +14,8 @@ import workbuddy_signin as wb  # noqa: E402
 
 
 RELEVANT_ENV = {
-    "WB_ACCESS_TOKEN",
-    "WB_ACCESS_TOKENS",
-    "WB_USER_ID",
-    "WB_USER_IDS",
     "WORKBUDDY_TOKEN",
-    "WORKBUDDY_UID",
-    "WORKBUDDY_EXTRA",
-    "WB_ENTERPRISE_ID",
-    "WB_ENTERPRISE_IDS",
-    "WB_DOMAIN",
-    "WB_DOMAINS",
-    "WB_FETCH_BALANCE",
+    "PUSHPLUS_TOKEN",
 }
 
 
@@ -55,39 +45,35 @@ class AccountParsingTests(unittest.TestCase):
         env.update(values)
         return patch.dict(os.environ, env, clear=True)
 
-    def test_modern_multi_account_inline_and_jwt_uid(self):
+    def test_single_token_and_jwt_uid(self):
         token = make_jwt({"sub": "jwt-user"})
-        with self.clean_env(WB_ACCESS_TOKENS=f"manual-user:opaque-token,{token}"):
-            accounts = wb.load_accounts()
-
-        self.assertEqual([account.uid for account in accounts], ["manual-user", "jwt-user"])
-        self.assertEqual(len(accounts), 2)
-
-    def test_legacy_variables_remain_compatible(self):
-        with self.clean_env(
-            WORKBUDDY_TOKEN="token-a&token-b",
-            WORKBUDDY_UID="uid-a&uid-b",
-        ):
-            accounts = wb.load_accounts()
-
-        self.assertEqual([account.uid for account in accounts], ["uid-a", "uid-b"])
-
-    def test_duplicate_tokens_are_removed(self):
-        with self.clean_env(WB_ACCESS_TOKENS="uid-a:same-token,uid-b:same-token"):
+        with self.clean_env(WORKBUDDY_TOKEN=token):
             accounts = wb.load_accounts()
 
         self.assertEqual(len(accounts), 1)
-        self.assertEqual(accounts[0].uid, "uid-a")
+        self.assertEqual(accounts[0].uid, "jwt-user")
+
+    def test_multi_account_uses_ampersand(self):
+        with self.clean_env(WORKBUDDY_TOKEN="token-a&token-b"):
+            accounts = wb.load_accounts()
+
+        self.assertEqual([account.token for account in accounts], ["token-a", "token-b"])
+
+    def test_duplicate_tokens_are_removed(self):
+        with self.clean_env(WORKBUDDY_TOKEN="same-token&same-token"):
+            accounts = wb.load_accounts()
+
+        self.assertEqual(len(accounts), 1)
 
 
 class CheckinFlowTests(unittest.TestCase):
     def setUp(self):
-        self.env_patch = patch.dict(os.environ, {"WB_FETCH_BALANCE": "0"})
-        self.env_patch.start()
+        self.balance_patch = patch.object(wb, "fetch_balance", return_value=None)
+        self.balance_patch.start()
         self.account = wb.Account(index=1, token="secret-token", uid="uid-1")
 
     def tearDown(self):
-        self.env_patch.stop()
+        self.balance_patch.stop()
 
     def test_status_true_skips_claim(self):
         client = FakeClient([(200, {"code": 0, "data": {"today_checked_in": True, "streak_days": 2}})])

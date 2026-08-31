@@ -8,7 +8,7 @@ WorkBuddy 自动签到（青龙面板版）
 
 特点：
   - 仅向 https://copilot.tencent.com 发送 WorkBuddy Token
-  - 支持新旧环境变量、多账号、JWT 自动解析 UID
+  - 只需配置 WORKBUDDY_TOKEN，支持多账号并自动解析 UID
   - 兼容重复签到、接口响应包装变化和状态接口路径变化
   - 支持 Token 到期预警、积分余额、青龙 notify.py 与 PushPlus 通知
   - 仅使用 Python 标准库
@@ -29,10 +29,10 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 OFFICIAL_BASE = "https://copilot.tencent.com"
 STATUS_PATHS = (
     "/v2/billing/meter/checkin-activity-status",
@@ -56,8 +56,6 @@ class Account:
     index: int
     token: str
     uid: str = ""
-    enterprise_id: str = ""
-    domain: str = ""
 
     @property
     def label(self) -> str:
@@ -76,11 +74,6 @@ class Account:
         }
         if self.uid:
             headers["X-User-Id"] = self.uid
-        if self.enterprise_id:
-            headers["X-Enterprise-Id"] = self.enterprise_id
-            headers["X-Tenant-Id"] = self.enterprise_id
-        if self.domain:
-            headers["X-Domain"] = self.domain
         return headers
 
 
@@ -88,50 +81,12 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def env_bool(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    return value.strip().lower() not in {"0", "false", "no", "off", "disable", "disabled"}
-
-
-def env_int(name: str, default: int, minimum: int = 0, maximum: int = 100) -> int:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        return default
-    try:
-        parsed = int(value)
-    except ValueError:
-        return default
-    return max(minimum, min(maximum, parsed))
-
-
-def env_float(name: str, default: float, minimum: float = 0.0, maximum: float = 60.0) -> float:
-    value = os.environ.get(name, "").strip()
-    if not value:
-        return default
-    try:
-        parsed = float(value)
-    except ValueError:
-        return default
-    return max(minimum, min(maximum, parsed))
-
-
-def split_values(value: str) -> List[str]:
-    """兼容逗号、& 和换行分隔。"""
+def split_tokens(value: str) -> List[str]:
+    """单账号直接填写；多账号使用 & 分隔，也容忍换行。"""
     if not value:
         return []
     normalized = value.replace("\r\n", "\n").replace("\r", "\n")
-    for separator in ("&", "\n"):
-        normalized = normalized.replace(separator, ",")
-    return [item.strip() for item in normalized.split(",") if item.strip()]
-
-
-def split_records(value: str) -> List[str]:
-    """拆分 WORKBUDDY_EXTRA；保留字段内可能出现的逗号。"""
-    if not value:
-        return []
-    normalized = value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "&")
+    normalized = normalized.replace("\n", "&")
     return [item.strip() for item in normalized.split("&") if item.strip()]
 
 
@@ -179,92 +134,24 @@ def token_expiry(token: str, warn_days: int) -> Tuple[Optional[int], Optional[st
     return days, None
 
 
-def _parse_token_item(item: str) -> Tuple[str, str]:
-    """解析 token 或 uid:token；JWT 本身不包含冒号。"""
-    if ":" in item and not item.startswith("eyJ"):
-        uid, token = item.split(":", 1)
-        if uid.strip() and token.strip():
-            return uid.strip(), token.strip()
-    return "", item.strip()
-
-
-def _value_for_index(values: Sequence[str], index: int) -> str:
-    if index < len(values):
-        return values[index]
-    return ""
-
-
 def load_accounts() -> List[Account]:
-    """解析现代变量并兼容旧版 WORKBUDDY_* 变量。"""
-    pairs: List[Tuple[str, str]] = []
-
-    modern_multi = os.environ.get("WB_ACCESS_TOKENS", "").strip()
-    modern_single = os.environ.get("WB_ACCESS_TOKEN", "").strip()
-    if modern_multi:
-        pairs.extend(_parse_token_item(item) for item in split_values(modern_multi))
-    if modern_single:
-        pairs.append(("", modern_single))
-
-    using_legacy = False
-    if not pairs:
-        using_legacy = True
-        legacy_tokens = split_values(os.environ.get("WORKBUDDY_TOKEN", ""))
-        pairs.extend(("", token) for token in legacy_tokens)
-
-    if not pairs:
-        raise ConfigError(
-            "未配置 Token，请设置 WB_ACCESS_TOKEN、WB_ACCESS_TOKENS 或 WORKBUDDY_TOKEN"
-        )
-
-    if using_legacy:
-        manual_uids = split_values(os.environ.get("WORKBUDDY_UID", ""))
-    else:
-        manual_uids = split_values(os.environ.get("WB_USER_IDS", ""))
-        single_uid = os.environ.get("WB_USER_ID", "").strip()
-        if single_uid:
-            if manual_uids:
-                raise ConfigError("WB_USER_ID 与 WB_USER_IDS 请勿同时配置")
-            manual_uids = [single_uid]
-        if not manual_uids:
-            manual_uids = split_values(os.environ.get("WORKBUDDY_UID", ""))
-
-    if manual_uids and len(manual_uids) > len(pairs):
-        raise ConfigError("UID 数量多于 Token 数量，请检查多账号分隔符")
-
-    enterprise_ids = split_values(
-        os.environ.get("WB_ENTERPRISE_IDS", "") or os.environ.get("WB_ENTERPRISE_ID", "")
-    )
-    domains = split_values(os.environ.get("WB_DOMAINS", "") or os.environ.get("WB_DOMAIN", ""))
-    extras = split_records(os.environ.get("WORKBUDDY_EXTRA", ""))
+    """只读取 WORKBUDDY_TOKEN，UID 自动从 JWT 解析。"""
+    tokens = split_tokens(os.environ.get("WORKBUDDY_TOKEN", ""))
+    if not tokens:
+        raise ConfigError("未配置 WORKBUDDY_TOKEN")
 
     accounts: List[Account] = []
     seen_tokens = set()
-    for offset, (inline_uid, token) in enumerate(pairs):
+    for token in tokens:
         token = token.strip()
         if not token or token in seen_tokens:
             continue
         seen_tokens.add(token)
-
-        uid = inline_uid or _value_for_index(manual_uids, offset) or decode_uid(token)
-        enterprise_id = _value_for_index(enterprise_ids, offset)
-        domain = _value_for_index(domains, offset)
-
-        if offset < len(extras):
-            fields = extras[offset].split("#")
-            if not enterprise_id and fields:
-                enterprise_id = fields[0].strip()
-            if not domain and len(fields) >= 2:
-                domain = fields[1].strip()
-            if len(fields) >= 3 and fields[2].strip():
-                log("⚠️ 已忽略 WORKBUDDY_EXTRA 中的自定义 endpoint；Token 只允许发送到腾讯官方域名")
-
         accounts.append(
             Account(
                 index=len(accounts) + 1,
                 token=token,
-                uid=uid,
-                enterprise_id=enterprise_id,
-                domain=domain,
+                uid=decode_uid(token),
             )
         )
 
@@ -274,15 +161,10 @@ def load_accounts() -> List[Account]:
 
 
 class HttpClient:
-    def __init__(self, timeout: int = 25, retries: int = 2, proxy: str = "") -> None:
+    def __init__(self, timeout: int = 25, retries: int = 2) -> None:
         self.timeout = timeout
         self.retries = retries
-        handlers: List[Any] = []
-        if proxy:
-            handlers.append(urllib.request.ProxyHandler({"http": proxy, "https": proxy}))
-        else:
-            handlers.append(urllib.request.ProxyHandler({}))
-        self.opener = urllib.request.build_opener(*handlers)
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     @staticmethod
     def _decode_body(raw: bytes) -> Any:
@@ -395,8 +277,6 @@ def fetch_status(client: HttpClient, headers: Dict[str, str]) -> Tuple[int, Any,
 
 
 def fetch_balance(client: HttpClient, headers: Dict[str, str]) -> Optional[int]:
-    if not env_bool("WB_FETCH_BALANCE", True):
-        return None
     try:
         status, body = client.post(BALANCE_PATH, headers)
         if not 200 <= status < 300:
@@ -509,7 +389,7 @@ def checkin_one(client: HttpClient, account: Account) -> Dict[str, Any]:
 
 
 def send_pushplus(title: str, content: str) -> bool:
-    token = (os.environ.get("PUSHPLUS_TOKEN") or os.environ.get("PUSH_PLUS_TOKEN") or "").strip()
+    token = os.environ.get("PUSHPLUS_TOKEN", "").strip()
     if not token:
         return False
     payload = json.dumps(
@@ -531,9 +411,6 @@ def send_pushplus(title: str, content: str) -> bool:
 
 
 def send_notify(title: str, content: str) -> None:
-    if not env_bool("WB_NOTIFY", env_bool("QINGLONG_NOTIFY", True)):
-        return
-
     sent = False
     try:
         from notify import send  # type: ignore
@@ -551,14 +428,7 @@ def send_notify(title: str, content: str) -> None:
 
 
 def build_client() -> HttpClient:
-    proxy = os.environ.get("WB_PROXY", "").strip()
-    if proxy and not proxy.lower().startswith(("http://", "https://")):
-        raise ConfigError("WB_PROXY 仅支持 http:// 或 https:// 代理地址")
-    return HttpClient(
-        timeout=env_int("WB_TIMEOUT", 25, 5, 120),
-        retries=env_int("WB_RETRY_COUNT", 2, 0, 5),
-        proxy=proxy,
-    )
+    return HttpClient(timeout=25, retries=2)
 
 
 def main() -> int:
@@ -575,13 +445,8 @@ def main() -> int:
         send_notify("WorkBuddy 签到配置错误", message)
         return 2
 
-    warn_days = env_int(
-        "WB_TOKEN_WARN_DAYS",
-        env_int("WORKBUDDY_TOKEN_WARN_DAYS", 3, 0, 30),
-        0,
-        30,
-    )
-    account_delay = env_float("WB_ACCOUNT_DELAY", 1.5, 0.0, 30.0)
+    warn_days = 3
+    account_delay = 1.5
     reports: List[str] = []
     warnings: List[str] = []
     success_count = 0
@@ -590,7 +455,7 @@ def main() -> int:
     for position, account in enumerate(accounts):
         log(f"\n▶ [{account.label}]")
         if not account.uid:
-            log("  ⚠️ 未解析到 UID，将不发送 X-User-Id；如失败请配置 WB_USER_ID(S)")
+            log("  ℹ️ Token 中没有 UID，将仅使用 Bearer Token 请求")
 
         days, warning = token_expiry(account.token, warn_days)
         if warning:
