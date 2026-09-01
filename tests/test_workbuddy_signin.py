@@ -47,7 +47,7 @@ class AccountParsingTests(unittest.TestCase):
 
     def test_single_token_and_jwt_uid(self):
         token = make_jwt({"sub": "jwt-user"})
-        value = json.dumps([{"name": "小明", "token": token}])
+        value = json.dumps([{"name": "小明", "accessToken": token}])
         with self.clean_env(WORKBUDDY_ACCOUNTS=value):
             accounts = wb.load_accounts()
 
@@ -58,8 +58,8 @@ class AccountParsingTests(unittest.TestCase):
     def test_multi_account_json_array(self):
         value = json.dumps(
             [
-                {"name": "张三", "token": "token-a"},
-                {"name": "李四", "token": "token-b"},
+                {"name": "张三", "accessToken": "token-a"},
+                {"name": "李四", "accessToken": "token-b"},
             ]
         )
         with self.clean_env(WORKBUDDY_ACCOUNTS=value):
@@ -70,7 +70,7 @@ class AccountParsingTests(unittest.TestCase):
         self.assertEqual([account.label for account in accounts], ["张三", "李四"])
 
     def test_name_is_optional(self):
-        value = json.dumps([{"token": "token-a"}])
+        value = json.dumps([{"accessToken": "token-a"}])
         with self.clean_env(WORKBUDDY_ACCOUNTS=value):
             accounts = wb.load_accounts()
 
@@ -80,8 +80,8 @@ class AccountParsingTests(unittest.TestCase):
     def test_duplicate_tokens_are_removed(self):
         value = json.dumps(
             [
-                {"name": "首次配置", "token": "same-token"},
-                {"name": "重复配置", "token": "same-token"},
+                {"name": "首次配置", "accessToken": "same-token"},
+                {"name": "重复配置", "accessToken": "same-token"},
             ]
         )
         with self.clean_env(WORKBUDDY_ACCOUNTS=value):
@@ -96,13 +96,18 @@ class AccountParsingTests(unittest.TestCase):
                 wb.load_accounts()
 
     def test_root_must_be_non_empty_array(self):
-        with self.clean_env(WORKBUDDY_ACCOUNTS='{"name":"小明","token":"token-a"}'):
+        with self.clean_env(WORKBUDDY_ACCOUNTS='{"name":"小明","accessToken":"token-a"}'):
             with self.assertRaisesRegex(wb.ConfigError, "必须是非空 JSON 数组"):
                 wb.load_accounts()
 
-    def test_each_account_requires_token(self):
+    def test_each_account_requires_access_token(self):
         with self.clean_env(WORKBUDDY_ACCOUNTS='[{"name":"小明"}]'):
-            with self.assertRaisesRegex(wb.ConfigError, "缺少有效的 token"):
+            with self.assertRaisesRegex(wb.ConfigError, "缺少有效的 accessToken"):
+                wb.load_accounts()
+
+    def test_legacy_token_field_is_rejected(self):
+        with self.clean_env(WORKBUDDY_ACCOUNTS='[{"name":"小明","token":"token-a"}]'):
+            with self.assertRaisesRegex(wb.ConfigError, "缺少有效的 accessToken"):
                 wb.load_accounts()
 
 

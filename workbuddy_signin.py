@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-VERSION = "3.0.0"
+VERSION = "3.1.0"
 OFFICIAL_BASE = "https://copilot.tencent.com"
 STATUS_PATHS = (
     "/v2/billing/meter/checkin-activity-status",
@@ -148,11 +148,11 @@ def load_accounts() -> List[Account]:
     seen_tokens = set()
     for position, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
-            raise ConfigError(f"第 {position} 个账号必须是包含 name 和 token 的 JSON 对象")
+            raise ConfigError(f"第 {position} 个账号必须是包含 name 和 accessToken 的 JSON 对象")
 
-        token_value = entry.get("token")
+        token_value = entry.get("accessToken")
         if not isinstance(token_value, str) or not token_value.strip():
-            raise ConfigError(f"第 {position} 个账号缺少有效的 token")
+            raise ConfigError(f"第 {position} 个账号缺少有效的 accessToken")
         token = token_value.strip()
 
         name_value = entry.get("name", "")

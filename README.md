@@ -93,13 +93,13 @@ eyJhbGciOi...这里是很长的完整Token
 将复制出的 Token 填入 `WORKBUDDY_ACCOUNTS` JSON。单账号示例：
 
 ```json
-[{"name":"我的账号","token":"粘贴刚才复制的完整Token"}]
+[{"name":"我的账号","accessToken":"粘贴刚才复制的完整Token"}]
 ```
 
 多账号时，分别登录每个账号并复制 Token。切换账号前先保存当前 Token，因为登录态文件可能会被新账号覆盖：
 
 ```json
-[{"name":"账号一","token":"第一个完整Token"},{"name":"账号二","token":"第二个完整Token"}]
+[{"name":"账号一","accessToken":"第一个完整Token"},{"name":"账号二","accessToken":"第二个完整Token"}]
 ```
 
 如果没有找到登录态文件，请确认 WorkBuddy 桌面端已完成登录并进入主界面，然后重启客户端再检查上述两个 Windows 路径。不同客户端版本的存储路径可能变化，也可以在用户目录中搜索文件名 `workbuddy-desktop.info`。
@@ -156,7 +156,7 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 [
   {
     "name": "账号名称",
-    "token": "完整accessToken"
+    "accessToken": "完整accessToken"
   }
 ]
 ```
@@ -166,7 +166,7 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 | 字段 | 是否必填 | 类型 | 说明 |
 |---|---|---|---|
 | `name` | 否 | 字符串 | 日志和通知中显示的名称；省略时显示脱敏 UID 或 `账号N` |
-| `token` | 是 | 字符串 | 从登录态文件中复制的完整 `auth.accessToken` |
+| `accessToken` | 是 | 字符串 | 从登录态文件中复制的完整 `auth.accessToken` |
 
 ### 青龙面板填写方法
 
@@ -188,7 +188,7 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 
 ```text
 名称：WORKBUDDY_ACCOUNTS
-值：[{"name":"小明","token":"eyJhbGciOiJIUzI1NiJ9.abc123.signature"}]
+值：[{"name":"小明","accessToken":"eyJhbGciOiJIUzI1NiJ9.abc123.signature"}]
 备注：可留空
 ```
 
@@ -203,7 +203,7 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 
 ```text
 名称：WORKBUDDY_ACCOUNTS
-值：[{"token":"你的完整Token"}]
+值：[{"accessToken":"你的完整Token"}]
 ```
 
 ### 多账号示例
@@ -214,15 +214,15 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 [
   {
     "name": "小明",
-    "token": "第一个账号的完整Token"
+    "accessToken": "第一个账号的完整Token"
   },
   {
     "name": "小红",
-    "token": "第二个账号的完整Token"
+    "accessToken": "第二个账号的完整Token"
   },
   {
     "name": "小刚",
-    "token": "第三个账号的完整Token"
+    "accessToken": "第三个账号的完整Token"
   }
 ]
 ```
@@ -231,7 +231,7 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 
 ```text
 名称：WORKBUDDY_ACCOUNTS
-值：[{"name":"小明","token":"Token1"},{"name":"小红","token":"Token2"},{"name":"小刚","token":"Token3"}]
+值：[{"name":"小明","accessToken":"Token1"},{"name":"小红","accessToken":"Token2"},{"name":"小刚","accessToken":"Token3"}]
 ```
 
 这里的 `Token1`、`Token2`、`Token3` 只是位置示意，实际使用时必须分别替换为每个账号的完整 Token。
@@ -251,8 +251,8 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 
 ### JSON 填写规则
 
-- 最外层必须是数组 `[...]`，每个账号写成 `{"name":"名称","token":"完整Token"}`。
-- `token` 必填，`name` 可省略；字段和内容必须使用英文双引号，末尾不要添加逗号。
+- 最外层必须是数组 `[...]`，每个账号写成 `{"name":"名称","accessToken":"完整Token"}`。
+- `accessToken` 必填，`name` 可省略；字段和内容必须使用英文双引号，末尾不要添加逗号。
 - Token 不要添加 `Bearer `，也不能使用省略号或截断内容。
 - 旧版 `名称#Token&名称#Token` 格式不再支持。
 
@@ -277,14 +277,14 @@ UID、重试次数、超时时间、积分余额查询、Token 到期提醒和�
 Linux/macOS：
 
 ```bash
-export WORKBUDDY_ACCOUNTS='[{"name":"张三","token":"你的完整Token"}]'
+export WORKBUDDY_ACCOUNTS='[{"name":"张三","accessToken":"你的完整Token"}]'
 python3 workbuddy_signin.py
 ```
 
 Windows PowerShell：
 
 ```powershell
-$env:WORKBUDDY_ACCOUNTS = '[{"name":"张三","token":"你的完整Token"}]'
+$env:WORKBUDDY_ACCOUNTS = '[{"name":"张三","accessToken":"你的完整Token"}]'
 python .\workbuddy_signin.py
 ```
 
