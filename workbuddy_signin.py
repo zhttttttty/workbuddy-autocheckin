@@ -8,7 +8,7 @@ WorkBuddy 自动签到（青龙面板版）
 
 特点：
   - 仅向 https://copilot.tencent.com 发送 WorkBuddy Token
-  - 配置 WORKBUDDY_TOKEN，支持“名称#Token”及多账号
+  - 使用 WORKBUDDY_ACCOUNTS JSON 数组配置一个或多个账号
   - 兼容重复签到、接口响应包装变化和状态接口路径变化
   - 支持 Token 到期预警、积分余额、青龙 notify.py 与 PushPlus 通知
   - 仅使用 Python 标准库
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-VERSION = "2.2.0"
+VERSION = "3.0.0"
 OFFICIAL_BASE = "https://copilot.tencent.com"
 STATUS_PATHS = (
     "/v2/billing/meter/checkin-activity-status",
@@ -84,23 +84,6 @@ def log(message: str) -> None:
     print(message, flush=True)
 
 
-def split_tokens(value: str) -> List[str]:
-    """单账号直接填写；多账号使用 & 分隔，也容忍换行。"""
-    if not value:
-        return []
-    normalized = value.replace("\r\n", "\n").replace("\r", "\n")
-    normalized = normalized.replace("\n", "&")
-    return [item.strip() for item in normalized.split("&") if item.strip()]
-
-
-def split_account_entry(entry: str) -> Tuple[str, str]:
-    """解析可选的“名称#Token”；无名称时保持旧格式兼容。"""
-    if "#" not in entry:
-        return "", entry.strip()
-    name, token = entry.split("#", 1)
-    return name.strip(), token.strip()
-
-
 def _b64url_json(segment: str) -> Dict[str, Any]:
     segment += "=" * (-len(segment) % 4)
     raw = base64.urlsafe_b64decode(segment.encode("ascii"))
@@ -146,16 +129,38 @@ def token_expiry(token: str, warn_days: int) -> Tuple[Optional[int], Optional[st
 
 
 def load_accounts() -> List[Account]:
-    """读取“名称#Token”账号项，UID 自动从 JWT 解析。"""
-    entries = split_tokens(os.environ.get("WORKBUDDY_TOKEN", ""))
-    if not entries:
-        raise ConfigError("未配置 WORKBUDDY_TOKEN")
+    """读取 WORKBUDDY_ACCOUNTS JSON 数组，UID 自动从 JWT 解析。"""
+    raw = os.environ.get("WORKBUDDY_ACCOUNTS", "").strip()
+    if not raw:
+        raise ConfigError("未配置 WORKBUDDY_ACCOUNTS")
+
+    try:
+        entries = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ConfigError(
+            f"WORKBUDDY_ACCOUNTS 不是有效的 JSON（第 {error.lineno} 行第 {error.colno} 列）"
+        ) from error
+
+    if not isinstance(entries, list) or not entries:
+        raise ConfigError("WORKBUDDY_ACCOUNTS 必须是非空 JSON 数组")
 
     accounts: List[Account] = []
     seen_tokens = set()
-    for entry in entries:
-        name, token = split_account_entry(entry)
-        if not token or token in seen_tokens:
+    for position, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise ConfigError(f"第 {position} 个账号必须是包含 name 和 token 的 JSON 对象")
+
+        token_value = entry.get("token")
+        if not isinstance(token_value, str) or not token_value.strip():
+            raise ConfigError(f"第 {position} 个账号缺少有效的 token")
+        token = token_value.strip()
+
+        name_value = entry.get("name", "")
+        if not isinstance(name_value, str):
+            raise ConfigError(f"第 {position} 个账号的 name 必须是字符串")
+        name = name_value.strip()
+
+        if token in seen_tokens:
             continue
         seen_tokens.add(token)
         accounts.append(

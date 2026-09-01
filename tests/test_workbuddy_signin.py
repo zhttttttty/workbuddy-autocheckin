@@ -14,7 +14,7 @@ import workbuddy_signin as wb  # noqa: E402
 
 
 RELEVANT_ENV = {
-    "WORKBUDDY_TOKEN",
+    "WORKBUDDY_ACCOUNTS",
     "PUSHPLUS_TOKEN",
 }
 
@@ -47,39 +47,63 @@ class AccountParsingTests(unittest.TestCase):
 
     def test_single_token_and_jwt_uid(self):
         token = make_jwt({"sub": "jwt-user"})
-        with self.clean_env(WORKBUDDY_TOKEN=token):
+        value = json.dumps([{"name": "小明", "token": token}])
+        with self.clean_env(WORKBUDDY_ACCOUNTS=value):
             accounts = wb.load_accounts()
 
         self.assertEqual(len(accounts), 1)
         self.assertEqual(accounts[0].uid, "jwt-user")
+        self.assertEqual(accounts[0].label, "小明")
 
-    def test_multi_account_uses_ampersand(self):
-        with self.clean_env(WORKBUDDY_TOKEN="token-a&token-b"):
+    def test_multi_account_json_array(self):
+        value = json.dumps(
+            [
+                {"name": "张三", "token": "token-a"},
+                {"name": "李四", "token": "token-b"},
+            ]
+        )
+        with self.clean_env(WORKBUDDY_ACCOUNTS=value):
             accounts = wb.load_accounts()
 
         self.assertEqual([account.token for account in accounts], ["token-a", "token-b"])
-
-    def test_names_can_be_prefixed_to_tokens(self):
-        with self.clean_env(WORKBUDDY_TOKEN="张三#token-a&李四#token-b"):
-            accounts = wb.load_accounts()
-
         self.assertEqual([account.name for account in accounts], ["张三", "李四"])
-        self.assertEqual([account.token for account in accounts], ["token-a", "token-b"])
         self.assertEqual([account.label for account in accounts], ["张三", "李四"])
 
-    def test_named_and_unnamed_entries_can_be_mixed(self):
-        with self.clean_env(WORKBUDDY_TOKEN="张三#token-a&token-b&#token-c"):
+    def test_name_is_optional(self):
+        value = json.dumps([{"token": "token-a"}])
+        with self.clean_env(WORKBUDDY_ACCOUNTS=value):
             accounts = wb.load_accounts()
 
-        self.assertEqual(accounts[0].label, "张三")
-        self.assertEqual(accounts[1].label, "账号2")
-        self.assertEqual(accounts[2].label, "账号3")
+        self.assertEqual(accounts[0].name, "")
+        self.assertEqual(accounts[0].label, "账号1")
 
     def test_duplicate_tokens_are_removed(self):
-        with self.clean_env(WORKBUDDY_TOKEN="same-token&same-token"):
+        value = json.dumps(
+            [
+                {"name": "首次配置", "token": "same-token"},
+                {"name": "重复配置", "token": "same-token"},
+            ]
+        )
+        with self.clean_env(WORKBUDDY_ACCOUNTS=value):
             accounts = wb.load_accounts()
 
         self.assertEqual(len(accounts), 1)
+        self.assertEqual(accounts[0].name, "首次配置")
+
+    def test_invalid_json_has_clear_error(self):
+        with self.clean_env(WORKBUDDY_ACCOUNTS='[{"name":"小明",}]'):
+            with self.assertRaisesRegex(wb.ConfigError, "不是有效的 JSON"):
+                wb.load_accounts()
+
+    def test_root_must_be_non_empty_array(self):
+        with self.clean_env(WORKBUDDY_ACCOUNTS='{"name":"小明","token":"token-a"}'):
+            with self.assertRaisesRegex(wb.ConfigError, "必须是非空 JSON 数组"):
+                wb.load_accounts()
+
+    def test_each_account_requires_token(self):
+        with self.clean_env(WORKBUDDY_ACCOUNTS='[{"name":"小明"}]'):
+            with self.assertRaisesRegex(wb.ConfigError, "缺少有效的 token"):
+                wb.load_accounts()
 
 
 class CheckinFlowTests(unittest.TestCase):
