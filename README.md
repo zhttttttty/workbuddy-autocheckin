@@ -35,7 +35,11 @@ workbuddy-autocheckin/
 
 ## 获取 Token
 
-先在 WorkBuddy 桌面端正常登录，再找到登录态文件：
+Token 保存在 WorkBuddy 桌面端的登录态文件中，不需要抓包，也不需要打开开发者工具。
+
+### 第一步：登录 WorkBuddy
+
+打开 WorkBuddy 桌面端并正常登录。确认客户端已经进入主界面后，再查找下面的登录态文件：
 
 | 系统 | 新版登录态文件 |
 |---|---|
@@ -44,7 +48,61 @@ workbuddy-autocheckin/
 | macOS | `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info` |
 | Linux | `~/.config/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info` |
 
-打开 JSON 文件，复制 `auth.accessToken` 的完整内容即可。UID 会由脚本自动解析，不需要另外查找。
+Windows 用户可以按 `Win + R`，粘贴下面的路径并回车：
+
+```text
+%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth
+```
+
+如果该目录不存在，再尝试：
+
+```text
+%APPDATA%\CodeBuddyExtension\Data\Public\auth
+```
+
+macOS 用户可以在 Finder 中按 `Command + Shift + G`，粘贴表格中的 macOS 路径。
+
+### 第二步：复制 accessToken
+
+使用记事本、VS Code 或其他文本编辑器打开 `workbuddy-desktop.info`。文件内容是 JSON，结构大致如下：
+
+```json
+{
+  "auth": {
+    "accessToken": "eyJhbGciOi...这里是很长的完整Token"
+  }
+}
+```
+
+找到 `auth` 对象中的 `accessToken`，只复制双引号里面的完整内容：
+
+```text
+eyJhbGciOi...这里是很长的完整Token
+```
+
+复制时注意：
+
+- 不要复制两侧的双引号。
+- 不要复制 `"accessToken":`。
+- 不要在 Token 前添加 `Bearer `。
+- 不要截断 Token，也不要把文档示例中的 `...` 当作 Token 的一部分。
+- UID 会由脚本自动解析，不需要复制 `uid` 或配置其他账号 ID。
+
+### 第三步：写入环境变量
+
+将复制出的 Token 填入 `WORKBUDDY_ACCOUNTS` JSON。单账号示例：
+
+```json
+[{"name":"我的账号","token":"粘贴刚才复制的完整Token"}]
+```
+
+多账号时，分别登录每个账号并复制 Token。切换账号前先保存当前 Token，因为登录态文件可能会被新账号覆盖：
+
+```json
+[{"name":"账号一","token":"第一个完整Token"},{"name":"账号二","token":"第二个完整Token"}]
+```
+
+如果没有找到登录态文件，请确认 WorkBuddy 桌面端已完成登录并进入主界面，然后重启客户端再检查上述两个 Windows 路径。不同客户端版本的存储路径可能变化，也可以在用户目录中搜索文件名 `workbuddy-desktop.info`。
 
 Token 等同于账号登录凭据，请勿发到群聊、Issue、公开仓库或截图中。
 
@@ -193,68 +251,12 @@ JSON 的整体结构是一个数组，数组中的每个对象代表一个 WorkB
 
 ### JSON 填写规则
 
-1. 最外层必须使用方括号 `[` 和 `]`，即使只有一个账号也不能省略。
-2. 每个账号必须是一个对象，使用花括号 `{` 和 `}`。
-3. JSON 的字段名和字符串必须使用英文双引号 `"`，不能使用单引号或中文引号。
-4. 每个账号必须包含非空的 `token`；`name` 可以省略。
-5. Token 必须完整复制，不能只复制开头，也不能包含文档示例中的 `...`。
-6. Token 前面不要添加 `Bearer `，脚本会自动添加认证前缀。
-7. 最后一个字段或最后一个账号后面不能添加多余的逗号。
-8. JSON 中不能写注释。
-9. 多个账号如果使用了相同 Token，脚本只处理第一次出现的账号。
-10. Token 属于登录凭据，不要发到群聊、Issue、截图或公开仓库。
+- 最外层必须是数组 `[...]`，每个账号写成 `{"name":"名称","token":"完整Token"}`。
+- `token` 必填，`name` 可省略；字段和内容必须使用英文双引号，末尾不要添加逗号。
+- Token 不要添加 `Bearer `，也不能使用省略号或截断内容。
+- 旧版 `名称#Token&名称#Token` 格式不再支持。
 
-### 常见错误
-
-错误：最外层不是数组：
-
-```json
-{"name":"小明","token":"完整Token"}
-```
-
-正确：即使只有一个账号，也要放进数组：
-
-```json
-[{"name":"小明","token":"完整Token"}]
-```
-
-错误：使用单引号，JSON 不接受这种写法：
-
-```text
-[{'name':'小明','token':'完整Token'}]
-```
-
-正确：使用英文双引号：
-
-```json
-[{"name":"小明","token":"完整Token"}]
-```
-
-错误：最后一个字段后面有多余逗号：
-
-```json
-[{"name":"小明","token":"完整Token",}]
-```
-
-正确：删除最后的逗号：
-
-```json
-[{"name":"小明","token":"完整Token"}]
-```
-
-错误：仍然使用旧版分隔格式：
-
-```text
-小明#Token1&小红#Token2
-```
-
-正确：改为 JSON 数组：
-
-```json
-[{"name":"小明","token":"Token1"},{"name":"小红","token":"Token2"}]
-```
-
-如果 JSON 无法解析，日志会提示出错的行号和列号；如果账号缺少 Token，日志会指出是第几个账号配置错误。
+配置错误时，日志会提示 JSON 出错位置或缺少 Token 的账号序号。
 
 UID、重试次数、超时时间、积分余额查询、Token 到期提醒和多账号间隔均由脚本自动处理，不需要另外配置。
 
