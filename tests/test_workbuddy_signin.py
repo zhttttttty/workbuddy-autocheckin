@@ -59,6 +59,22 @@ class AccountParsingTests(unittest.TestCase):
 
         self.assertEqual([account.token for account in accounts], ["token-a", "token-b"])
 
+    def test_names_can_be_prefixed_to_tokens(self):
+        with self.clean_env(WORKBUDDY_TOKEN="张三#token-a&李四#token-b"):
+            accounts = wb.load_accounts()
+
+        self.assertEqual([account.name for account in accounts], ["张三", "李四"])
+        self.assertEqual([account.token for account in accounts], ["token-a", "token-b"])
+        self.assertEqual([account.label for account in accounts], ["张三", "李四"])
+
+    def test_named_and_unnamed_entries_can_be_mixed(self):
+        with self.clean_env(WORKBUDDY_TOKEN="张三#token-a&token-b&#token-c"):
+            accounts = wb.load_accounts()
+
+        self.assertEqual(accounts[0].label, "张三")
+        self.assertEqual(accounts[1].label, "账号2")
+        self.assertEqual(accounts[2].label, "账号3")
+
     def test_duplicate_tokens_are_removed(self):
         with self.clean_env(WORKBUDDY_TOKEN="same-token&same-token"):
             accounts = wb.load_accounts()

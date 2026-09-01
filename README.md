@@ -11,7 +11,7 @@ WorkBuddy 每日积分自动签到脚本，面向青龙面板，也可以直接�
 - 调用腾讯 WorkBuddy 官方接口完成每日签到。
 - 先查询签到状态，未签到时才领取；服务端返回 `code=10001` 时按“今日已签到”处理。
 - 状态接口出现 `404/405` 时自动尝试兼容路径。
-- 只需配置一个 `WORKBUDDY_TOKEN`；多账号使用 `&` 分隔。
+- 只需配置一个 `WORKBUDDY_TOKEN`；支持 `名称#Token`，多账号使用 `&` 分隔。
 - UID 自动从 JWT 解析，无需单独配置。
 - 识别 HTTP `401/403` 登录态失效。
 - 网络错误、`429` 和常见 `5xx` 状态自动重试。
@@ -87,48 +87,220 @@ task workbuddy_signin.py
 
 ## 环境变量
 
-只需要一个必填变量：
+### 1. 必填变量 `WORKBUDDY_TOKEN`
+
+脚本只要求配置一个环境变量，变量名称必须是：
 
 ```text
-变量名：WORKBUDDY_TOKEN
-变量值：从登录态文件复制的完整 accessToken
+WORKBUDDY_TOKEN
 ```
 
-单账号示例：
+变量值由“账号名称”和“完整 Token”组成，基本格式为：
 
 ```text
-WORKBUDDY_TOKEN=eyJxxxx...
+账号名称#完整Token
 ```
 
-多账号仍然使用同一个变量，Token 之间用 `&` 分隔：
+各部分含义如下：
+
+| 内容 | 是否必填 | 作用 | 示例 |
+|---|---|---|---|
+| 账号名称 | 否 | 只用于日志和通知，方便区分账号 | `公司账号` |
+| `#` | 有名称时必填 | 分隔账号名称与 Token | `#` |
+| 完整 Token | 是 | WorkBuddy 登录凭据，从 `auth.accessToken` 复制 | `eyJhbGciOi...` |
+| `&` | 多账号时必填 | 分隔两个账号 | `&` |
+
+完整格式可以理解为：
 
 ```text
-WORKBUDDY_TOKEN=eyJ账号1...&eyJ账号2...
+名称1#Token1&名称2#Token2&名称3#Token3
 ```
 
-UID、重试次数、超时时间、积分余额查询、Token 到期提醒和多账号间隔均由脚本自动处理，不需要配置。
+> `名称1`、`Token1` 只是格式说明，不能原样填写。必须替换成自己的名称和从登录态文件复制的完整 Token。
 
-如果你希望额外使用 PushPlus，再添加一个可选变量：
+### 2. 青龙面板填写位置
+
+进入青龙面板 → **环境变量** → **新建变量**。青龙表单通常包含“名称”“值”“备注”等输入框：
+
+| 青龙输入框 | 应填写的内容 |
+|---|---|
+| 名称 | `WORKBUDDY_TOKEN` |
+| 值 | `账号名称#完整Token` |
+| 备注 | 可留空，脚本不会读取这里的内容 |
+
+注意：在青龙表单里，“名称”和“值”是两个不同的输入框。不要把
+`WORKBUDDY_TOKEN=` 一起粘贴到“值”输入框中。
+
+#### 青龙单账号模板
 
 ```text
-PUSHPLUS_TOKEN=你的PushPlus Token
+名称：WORKBUDDY_TOKEN
+值：小明#在这里粘贴小明账号的完整accessToken
+备注：可留空
 ```
 
-青龙面板原有的通知渠道不需要新增变量。
+假设复制出来的 Token 是 `eyJhbGciOiJIUzI1NiJ9.abc123.signature`，实际填写效果如下：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#eyJhbGciOiJIUzI1NiJ9.abc123.signature
+```
+
+脚本日志会显示：
+
+```text
+▶ [小明]
+  ✅ 签到成功
+```
+
+#### 青龙双账号模板
+
+只创建一个 `WORKBUDDY_TOKEN` 变量，不要创建 `WORKBUDDY_TOKEN1`、
+`WORKBUDDY_TOKEN2`。两个账号之间使用 `&` 连接：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#小明的完整Token&小红#小红的完整Token
+备注：可留空
+```
+
+例如：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#eyJAAA.aaa.sig&小红#eyJBBB.bbb.sig
+```
+
+脚本会把它解析为：
+
+| 顺序 | 日志名称 | 使用的 Token |
+|---|---|---|
+| 账号 1 | 小明 | `eyJAAA.aaa.sig` |
+| 账号 2 | 小红 | `eyJBBB.bbb.sig` |
+
+日志会分别显示：
+
+```text
+▶ [小明]
+  ✅ 签到成功
+
+▶ [小红]
+  ✅ 今日已签到
+```
+
+#### 青龙三个及更多账号模板
+
+继续在后面添加 `&名称#Token` 即可：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#Token1&小红#Token2&小刚#Token3
+```
+
+### 3. 不填写账号名称也可以
+
+账号名称是可选内容。只填写 Token 时，原有格式仍然有效。
+
+单账号无名称：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：完整Token
+```
+
+多账号无名称：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：Token1&Token2&Token3
+```
+
+命名账号与未命名账号也可以混合：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#Token1&Token2&小刚#Token3
+```
+
+未填写名称时，脚本优先显示从 JWT 中解析并脱敏后的 UID；如果 Token
+中无法解析 UID，则按顺序显示 `账号1`、`账号2`。
+
+### 4. 填写规则和注意事项
+
+1. Token 必须完整复制，不能只复制开头，也不能包含示例中的 `...`。
+2. Token 前面不要添加 `Bearer `，脚本会自动添加认证前缀。
+3. `#` 用于分隔名称和 Token；账号名称中不能包含 `#`。
+4. `&` 用于分隔多个账号；账号名称中不能包含 `&`。
+5. 推荐不要在 `#` 或 `&` 两侧添加空格，虽然脚本会自动清理首尾空格。
+6. 青龙“备注”字段不会作为日志名称；日志名称必须写在变量值的 Token 前面。
+7. 多账号仍然只创建一个 `WORKBUDDY_TOKEN` 环境变量。
+8. Token 属于登录凭据，不要发到群聊、Issue、截图或公开仓库。
+
+### 5. 常见错误示例
+
+错误：把变量赋值表达式全部填进青龙的“值”输入框：
+
+```text
+值：WORKBUDDY_TOKEN=小明#eyJAAA.aaa.sig
+```
+
+正确：青龙“名称”和“值”分开填写：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#eyJAAA.aaa.sig
+```
+
+错误：为每个账号创建不同的变量名：
+
+```text
+WORKBUDDY_TOKEN1
+WORKBUDDY_TOKEN2
+```
+
+正确：只创建一个变量，账号之间用 `&` 分隔：
+
+```text
+名称：WORKBUDDY_TOKEN
+值：小明#Token1&小红#Token2
+```
+
+错误：Token 不完整或把省略号也复制进去：
+
+```text
+值：小明#eyJxxxx...
+```
+
+正确：粘贴登录态文件中 `auth.accessToken` 的全部内容。
+
+### 6. 其他配置
+
+UID、重试次数、超时时间、积分余额查询、Token 到期提醒和多账号间隔均由脚本自动处理，不需要另外配置。
+
+如果需要 PushPlus 通知，再创建一个可选环境变量：
+
+```text
+名称：PUSHPLUS_TOKEN
+值：你的完整 PushPlus Token
+备注：可留空
+```
+
+不使用 PushPlus 时，不需要创建 `PUSHPLUS_TOKEN`。青龙面板已有的
+`notify.py` 通知渠道也不需要在本脚本中重复配置。
 
 ## 本地运行
 
 Linux/macOS：
 
 ```bash
-export WORKBUDDY_TOKEN='eyJxxxx...'
+export WORKBUDDY_TOKEN='张三#eyJxxxx...'
 python3 workbuddy_signin.py
 ```
 
 Windows PowerShell：
 
 ```powershell
-$env:WORKBUDDY_TOKEN = 'eyJxxxx...'
+$env:WORKBUDDY_TOKEN = '张三#eyJxxxx...'
 python .\workbuddy_signin.py
 ```
 
@@ -177,6 +349,7 @@ python3 -m unittest discover -s tests -v
 测试覆盖：
 
 - 单账号与多账号 Token 解析
+- `名称#Token` 解析及名称缺省回退
 - JWT UID 解析
 - 多账号去重
 - 已签到跳过

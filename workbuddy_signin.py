@@ -8,7 +8,7 @@ WorkBuddy 自动签到（青龙面板版）
 
 特点：
   - 仅向 https://copilot.tencent.com 发送 WorkBuddy Token
-  - 只需配置 WORKBUDDY_TOKEN，支持多账号并自动解析 UID
+  - 配置 WORKBUDDY_TOKEN，支持“名称#Token”及多账号
   - 兼容重复签到、接口响应包装变化和状态接口路径变化
   - 支持 Token 到期预警、积分余额、青龙 notify.py 与 PushPlus 通知
   - 仅使用 Python 标准库
@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 OFFICIAL_BASE = "https://copilot.tencent.com"
 STATUS_PATHS = (
     "/v2/billing/meter/checkin-activity-status",
@@ -56,9 +56,12 @@ class Account:
     index: int
     token: str
     uid: str = ""
+    name: str = ""
 
     @property
     def label(self) -> str:
+        if self.name:
+            return self.name
         if not self.uid:
             return f"账号{self.index}"
         if len(self.uid) <= 10:
@@ -88,6 +91,14 @@ def split_tokens(value: str) -> List[str]:
     normalized = value.replace("\r\n", "\n").replace("\r", "\n")
     normalized = normalized.replace("\n", "&")
     return [item.strip() for item in normalized.split("&") if item.strip()]
+
+
+def split_account_entry(entry: str) -> Tuple[str, str]:
+    """解析可选的“名称#Token”；无名称时保持旧格式兼容。"""
+    if "#" not in entry:
+        return "", entry.strip()
+    name, token = entry.split("#", 1)
+    return name.strip(), token.strip()
 
 
 def _b64url_json(segment: str) -> Dict[str, Any]:
@@ -135,15 +146,15 @@ def token_expiry(token: str, warn_days: int) -> Tuple[Optional[int], Optional[st
 
 
 def load_accounts() -> List[Account]:
-    """只读取 WORKBUDDY_TOKEN，UID 自动从 JWT 解析。"""
-    tokens = split_tokens(os.environ.get("WORKBUDDY_TOKEN", ""))
-    if not tokens:
+    """读取“名称#Token”账号项，UID 自动从 JWT 解析。"""
+    entries = split_tokens(os.environ.get("WORKBUDDY_TOKEN", ""))
+    if not entries:
         raise ConfigError("未配置 WORKBUDDY_TOKEN")
 
     accounts: List[Account] = []
     seen_tokens = set()
-    for token in tokens:
-        token = token.strip()
+    for entry in entries:
+        name, token = split_account_entry(entry)
         if not token or token in seen_tokens:
             continue
         seen_tokens.add(token)
@@ -152,6 +163,7 @@ def load_accounts() -> List[Account]:
                 index=len(accounts) + 1,
                 token=token,
                 uid=decode_uid(token),
+                name=name,
             )
         )
 
